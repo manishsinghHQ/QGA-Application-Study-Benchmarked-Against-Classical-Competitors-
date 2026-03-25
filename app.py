@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import concurrent.futures
 import time
+import os
 
 from sklearn.datasets import load_breast_cancer
 
@@ -14,9 +15,10 @@ from de import de
 from stats import compare_all
 
 # =====================
-# 🔁 Base Seed
+# 🔁 Config
 # =====================
 BASE_SEED = 42
+MAX_WORKERS = max(1, os.cpu_count() // 2)
 
 st.set_page_config(page_title="QGA Benchmark", layout="wide")
 st.title("🚀 QGA vs GA vs PSO vs DE Benchmark")
@@ -27,11 +29,19 @@ st.title("🚀 QGA vs GA vs PSO vs DE Benchmark")
 @st.cache_data
 def load_data():
     data = load_breast_cancer()
-    return data.data, data.target
+    return data.data, data.target, data.feature_names
 
-X, y = load_data()
+X, y, feature_names = load_data()
 
-runs = st.slider("Number of Runs", 3, 20, 5)
+# =====================
+# ⚡ Mode Selection
+# =====================
+mode = st.selectbox("Mode", ["Fast Demo ⚡", "Research 🔬"])
+
+if mode == "Fast Demo ⚡":
+    runs = 3
+else:
+    runs = st.slider("Number of Runs", 5, 20, 10)
 
 # =====================
 # 📊 Confidence Interval
@@ -42,6 +52,24 @@ def confidence_interval(data):
     n = len(data)
     ci = 1.96 * (std / np.sqrt(n))
     return mean - ci, mean + ci
+
+# =====================
+# 🚀 Single Run
+# =====================
+def run_single_experiment(i):
+    seed = BASE_SEED + i
+
+    qga_fit, qga_conv, qga_sol = qga(X, y, seed)
+    ga_fit, ga_conv, ga_sol = ga(X, y, seed)
+    pso_fit, pso_conv, pso_sol = pso(X, y, seed)
+    de_fit, de_conv, de_sol = de(X, y, seed)
+
+    return {
+        "qga": (qga_fit, qga_conv, qga_sol),
+        "ga": (ga_fit, ga_conv, ga_sol),
+        "pso": (pso_fit, pso_conv, pso_sol),
+        "de": (de_fit, de_conv, de_sol),
+    }
 
 # =====================
 # 🚀 Run Experiment
@@ -56,66 +84,55 @@ if st.button("Run Experiment"):
     progress = st.progress(0)
     start_time = time.time()
 
-    with st.spinner("Running optimized multi-core execution... 🚀"):
+    with st.spinner("Running high-speed parallel benchmark... 🚀"):
 
-        # ✅ SINGLE PROCESS POOL (FIXED)
-        with concurrent.futures.ProcessPoolExecutor() as executor:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            results_list = list(executor.map(run_single_experiment, range(runs)))
 
-            for i in range(runs):
+        for i, results in enumerate(results_list):
 
-                seed = BASE_SEED + i  # ✅ reproducibility
+            qga_fit, qga_conv, qga_sol = results["qga"]
+            ga_fit, ga_conv, ga_sol = results["ga"]
+            pso_fit, pso_conv, pso_sol = results["pso"]
+            de_fit, de_conv, de_sol = results["de"]
 
-                futures = {
-                    "qga": executor.submit(qga, X, y, seed),
-                    "ga": executor.submit(ga, X, y, seed),
-                    "pso": executor.submit(pso, X, y, seed),
-                    "de": executor.submit(de, X, y, seed),
-                }
+            qga_scores.append(qga_fit)
+            ga_scores.append(ga_fit)
+            pso_scores.append(pso_fit)
+            de_scores.append(de_fit)
 
-                results = {k: f.result() for k, f in futures.items()}
+            qga_feats.append(np.sum(qga_sol))
+            ga_feats.append(np.sum(ga_sol))
+            pso_feats.append(np.sum(pso_sol))
+            de_feats.append(np.sum(de_sol))
 
-                # Extract
-                qga_fit, qga_conv, qga_sol = results["qga"]
-                ga_fit, ga_conv, ga_sol = results["ga"]
-                pso_fit, pso_conv, pso_sol = results["pso"]
-                de_fit, de_conv, de_sol = results["de"]
+            all_qga_conv.append(qga_conv)
+            all_ga_conv.append(ga_conv)
+            all_pso_conv.append(pso_conv)
+            all_de_conv.append(de_conv)
 
-                # Scores
-                qga_scores.append(qga_fit)
-                ga_scores.append(ga_fit)
-                pso_scores.append(pso_fit)
-                de_scores.append(de_fit)
-
-                # Features
-                qga_feats.append(np.sum(qga_sol))
-                ga_feats.append(np.sum(ga_sol))
-                pso_feats.append(np.sum(pso_sol))
-                de_feats.append(np.sum(de_sol))
-
-                # Convergence
-                all_qga_conv.append(qga_conv)
-                all_ga_conv.append(ga_conv)
-                all_pso_conv.append(pso_conv)
-                all_de_conv.append(de_conv)
-
-                progress.progress((i + 1) / runs)
+            progress.progress((i + 1) / runs)
 
     end_time = time.time()
 
     # =====================
-    # 📊 Average Performance
+    # 📊 Average Fitness
     # =====================
+    avg_scores = {
+        "QGA": np.mean(qga_scores),
+        "GA": np.mean(ga_scores),
+        "PSO": np.mean(pso_scores),
+        "DE": np.mean(de_scores)
+    }
+
     st.subheader("📊 Average Fitness")
-    st.write(f"QGA: {np.mean(qga_scores):.4f}")
-    st.write(f"GA: {np.mean(ga_scores):.4f}")
-    st.write(f"PSO: {np.mean(pso_scores):.4f}")
-    st.write(f"DE: {np.mean(de_scores):.4f}")
+    for k, v in avg_scores.items():
+        st.write(f"{k}: {v:.4f}")
 
     # =====================
-    # 📊 Confidence Intervals
+    # 📊 Confidence Interval
     # =====================
     st.subheader("📊 95% Confidence Intervals")
-
     for name, scores in {
         "QGA": qga_scores,
         "GA": ga_scores,
@@ -126,9 +143,9 @@ if st.button("Run Experiment"):
         st.write(f"{name}: [{low:.4f}, {high:.4f}]")
 
     # =====================
-    # 📉 Stability (FIXED)
+    # 📉 Stability
     # =====================
-    st.subheader("📉 Stability (Std Dev - Unbiased)")
+    st.subheader("📉 Stability (Std Dev)")
     st.write(f"QGA: {np.std(qga_scores, ddof=1):.4f}")
     st.write(f"GA: {np.std(ga_scores, ddof=1):.4f}")
     st.write(f"PSO: {np.std(pso_scores, ddof=1):.4f}")
@@ -144,7 +161,7 @@ if st.button("Run Experiment"):
     st.write(f"DE: {int(np.mean(de_feats))}")
 
     # =====================
-    # 📈 Convergence Plot
+    # 📈 Convergence
     # =====================
     qga_conv_avg = np.mean(all_qga_conv, axis=0)
     ga_conv_avg = np.mean(all_ga_conv, axis=0)
@@ -172,6 +189,22 @@ if st.button("Run Experiment"):
     st.pyplot(fig2)
 
     # =====================
+    # 🔥 Pareto Plot (RESTORED)
+    # =====================
+    fig3, ax3 = plt.subplots()
+    ax3.scatter(qga_feats, qga_scores, label="QGA")
+    ax3.scatter(ga_feats, ga_scores, label="GA")
+    ax3.scatter(pso_feats, pso_scores, label="PSO")
+    ax3.scatter(de_feats, de_scores, label="DE")
+
+    ax3.set_xlabel("Number of Features")
+    ax3.set_ylabel("Fitness Score")
+    ax3.set_title("Accuracy vs Feature Reduction Trade-off")
+    ax3.legend()
+
+    st.pyplot(fig3)
+
+    # =====================
     # 📊 Statistical Test
     # =====================
     st.subheader("📊 Statistical Significance (Wilcoxon p-values)")
@@ -181,23 +214,39 @@ if st.button("Run Experiment"):
         st.write(f"{k}: {v:.5f}")
 
     # =====================
-    # 🏆 Winner
+    # 🏆 Winner (FIXED)
     # =====================
-    winner = max({
-        "QGA": np.mean(qga_scores),
-        "GA": np.mean(ga_scores),
-        "PSO": np.mean(pso_scores),
-        "DE": np.mean(de_scores)
-    }, key=lambda x: {
-        "QGA": np.mean(qga_scores),
-        "GA": np.mean(ga_scores),
-        "PSO": np.mean(pso_scores),
-        "DE": np.mean(de_scores)
-    }[x])
-
+    winner = max(avg_scores, key=avg_scores.get)
     st.success(f"🏆 Best Algorithm: {winner}")
 
     # =====================
-    # ⏱️ Execution Time
+    # 🧬 Feature Explainability
+    # =====================
+    best_idx = np.argmax(qga_scores)
+    best_solution = results_list[best_idx]["qga"][2]
+
+    selected_features = feature_names[best_solution == 1]
+
+    st.subheader("🧬 Selected Features (QGA Best Run)")
+    st.write(list(selected_features))
+
+    # =====================
+    # ⏱️ Time
     # =====================
     st.info(f"⏱️ Total Execution Time: {end_time - start_time:.2f} seconds")
+
+    # =====================
+    # 💾 Export
+    # =====================
+    df = pd.DataFrame({
+        "QGA": qga_scores,
+        "GA": ga_scores,
+        "PSO": pso_scores,
+        "DE": de_scores
+    })
+
+    st.download_button(
+        "📥 Download Results CSV",
+        df.to_csv(index=False),
+        "results.csv"
+    )
