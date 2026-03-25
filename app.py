@@ -13,7 +13,7 @@ from stats import compare_all
 # =====================
 # 🔁 Reproducibility
 # =====================
-np.random.seed(42)
+np.random.seed(42) 
 
 st.title("🚀 QGA vs GA vs PSO vs DE Benchmark")
 
